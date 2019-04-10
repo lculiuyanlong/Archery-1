@@ -4,4 +4,5 @@ from inspur import views
 
 urlpatterns = [
     path('sqlupdate1/', views.sqlupdate1),
+    path('update/updatelog/', views.updatelog),
 ]
