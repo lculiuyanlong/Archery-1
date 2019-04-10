@@ -18,7 +18,7 @@
         <form id="form-sqlquery" action="" method="post" class="form-horizontal" role="form">
             {% csrf_token %}
             <div class="col-md-12 column">
-                <pre id="sql_content_editor" class="ace_editor " style="min-height:350px"></pre>
+                <pre id="sql_content_editor" class="ace_editor " style="min-height:150px"></pre>
                 <div class="text-info">
                 <li>目前仅支持delete、alter等操作，多个sql之间要用分号;隔开。</li>
                 <li><FONT COLOR=FF0000 size="5">delete、alter更新操作已设置set sql_log_bin = 0;默认不会主从同步。</FONT></li>
@@ -108,10 +108,10 @@
     <script src="{% static 'ace/mode-sql.js' %}"></script>
     <script src="{% static 'ace/theme-github.js' %}"></script>
     <script src="{% static 'ace/snippets/sql.js' %}"></script>
-    <script src="{% static 'ace/ace_init.js' %}"></script>
+    <script src="{% static 'ace/ace-init.js' %}"></script>
     <script src="{% static 'bootstrap-table/js/bootstrap-table-export.min.js' %}"></script>
     <script src="{% static 'bootstrap-table/js/tableExport.min.js' %}"></script>
-    <script src="{% static 'dist/js/sql-formatter.min.js' %}"></script>
+    <script src="{% static 'sql-formatter/sql-formatter.min.js' %}"></script>
     <!-- 查询历史  -->
     <script>
 

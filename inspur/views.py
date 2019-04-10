@@ -1,3 +1,9 @@
+import datetime
+import logging
+import re
+import time
+import traceback
+import simplejson
 from django.shortcuts import render
 from django.contrib.auth.decorators import permission_required
 from django.db import connection, OperationalError
@@ -8,6 +14,10 @@ from sql.engines import get_engine
 from sql.utils.resource_group import user_groups, user_instances
 from inspur.models import UpdateLog
 import simplejson as json
+from common.utils.extend_json_encoder import ExtendJSONEncoder
+from sql.models import Instance
+
+logger = logging.getLogger('default')
 
 @permission_required('inspur.menu_sqlupdate', raise_exception=True)
 def sqlupdate1(request):
@@ -33,6 +43,8 @@ def sqlupdate1(request):
     database_list = []
     for instance_name in instances:
             print(instance_name)
+            print('2222')
+            print(type(instance_name))
             query_engine = get_engine(instance=instance_name)
             db_list = query_engine.get_all_databases()
             if dbfiter=='liu':
@@ -225,3 +237,134 @@ def dbfiter(request):
     print(database_list)
     print(type(database_list))
     return render(request, 'sqlupdate1.html', {'database_list': database_list})
+
+
+@permission_required('sql.menu_sqlupdate', raise_exception=True)
+def update1(request):
+    db_list = simplejson.loads(request.POST.get('db_list'))
+    print(db_list)
+    print(type(db_list))
+    sql_content = request.POST.get('sql_content')
+    result = {'status': 0, 'msg':['ok'] , 'data': {}}
+    resulttmp = {'status': 0, 'msg':['ok'] , 'data': {}}
+
+    # 服务器端参数验证
+    if sql_content is None or db_list is None:
+        result['status'] = 1
+        result['msg'] = '页面提交参数可能为空'
+        return HttpResponse(json.dumps(result), content_type='application/json')
+    sql_content = sql_content.strip()
+    # 获取用户信息
+    user = request.user
+
+    # 过滤注释语句和非查询的语句
+    sql_content = ''.join(
+        map(lambda x: re.compile(r'(^--\s+.*|^/\*.*\*/;\s*$)').sub('', x, count=1),
+            sql_content.splitlines(1))).strip()
+    # 去除空行
+    sql_content = re.sub('[\r\n\f]{2,}', '\n', sql_content)
+    print("++++++++++++++++++++++++++")
+
+
+    sql_list = sql_content.strip().split(';')
+    for i in range(sql_list.count('')):
+        sql_list.remove('')
+    sql_list = [sql.replace('\n','').strip() for sql in sql_list]
+
+
+    for sql in sql_list:
+        if re.match(r"^delete|^create|^alter", sql.lower()):
+            #pass
+            continue
+        else:
+            result['status'] = 1
+            result['msg'] = '仅支持^delete|^create|^alter，请联系管理员！'
+            return HttpResponse(json.dumps(result), content_type='application/json')
+
+    # 按照分号截取第一条有效sql执行
+    #sql_content = sql_content.strip().split(';')[0]
+
+    sql_log_bin='set sql_log_bin = 0;'
+    sql_content_new=''
+    for sql in sql_list:
+         if re.match(r"^delete|^alter", sql.lower()):
+             sql_content = sql_log_bin + sql_content
+
+
+    try:
+        # 查询权限校验
+        if re.match(r"^explain", sql_content.lower()):
+            limit_num = 0
+        # 对查询sql增加limit限制
+        if re.match(r"^select", sql_content.lower()):
+            if re.search(r"limit\s+(\d+)$", sql_content.lower()) is None:
+                if re.search(r"limit\s+\d+\s*,\s*(\d+)$", sql_content.lower()) is None:
+                    sql_content = sql_content + ' limit ' + str(limit_num)
+
+        # 执行更新语句,统计执行时间
+
+        sql_result={}
+        print(len(db_list))
+        for i in range(len(db_list)):
+            print("sql执行测试---------")
+            #print(db_list[str(i)]["instance"])
+            t_start = time.time()
+            instance_name = db_list[str(i)]["instance"]
+            instance = Instance.objects.filter(instance_name=instance_name)
+            print('0')
+            print(instance[0])
+            print(type(instance[0]))
+            print('1')
+            print(instance[0].db_type)
+            query_engine = get_engine(instance=instance[0])
+            sql_result = query_engine.execute(db_name=db_list[str(i)]["db"], sql=sql_content)
+            t_end = time.time()
+            cost_time = "%5s" % "{:.4f}".format(t_end - t_start)
+            if  sql_result:
+                resulttmp['msg']= '实例名'+db_list[str(i)]["instance"]+':数据库名'+db_list[str(i)]["db"]+" 错误信息"+str(sql_result)
+                resulttmp['msg']
+                #print(result['msg'])
+                if 'ok' in  result['msg']:
+                    result['msg'][0]=resulttmp['msg']
+                else:
+                    result['msg'].append(resulttmp['msg'])
+
+            if sql_result:
+                sql_result=str(sql_result)
+            else:
+                sql_result='ok'
+            print(sql_result)
+            updatelog_save(user,db_list[str(i)]["db"],db_list[str(i)]["instance"],sql_content,cost_time,sql_result)
+
+            print("看看sql_result是啥？")
+            print(sql_result)
+            result['status'] = 1
+
+        #result['msg']=result['msg'].strip('\\')
+        for i in range(result['msg'].count(' ')):
+            result['msg'].remove('\'')
+        print(result['msg'])
+
+        #sql_result['cost_time'] = cost_time
+        #sql_result['result'] = result['msg']
+
+        result['data'] = sql_result
+        print("-----------------------------------------------------")
+        print(result['data'])
+        print(sql_result)
+
+        #return HttpResponse(json.dumps(result), content_type='application/json')
+        #return HttpResponse(sql_result)
+       # sql_result = DaoUpdate(instance_name=instance_name).mysql_execute(str(db_name), sql_content, limit_num)
+
+
+    except Exception as e:
+        logger.error(traceback.format_exc())
+        result['status'] = 1
+        result['msg'] = str(e)
+
+    # 返回查询结果
+    try:
+        return HttpResponse(json.dumps(result, cls=ExtendJSONEncoder, bigint_as_string=True),content_type='application/json')
+    except Exception:
+        return HttpResponse(json.dumps(result, default=str, bigint_as_string=True, encoding='latin1'),content_type='application/json')
