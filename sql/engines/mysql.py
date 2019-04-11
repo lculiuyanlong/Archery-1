@@ -15,6 +15,8 @@ logger = logging.getLogger('default')
 
 
 class MysqlEngine(EngineBase):
+    def __int__(self):
+        return 'MySQL engine'
     def get_connection(self, db_name=None):
         if self.conn:
             return self.conn

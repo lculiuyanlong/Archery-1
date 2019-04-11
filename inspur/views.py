@@ -1,4 +1,4 @@
-import datetime
+# -*- coding: UTF-8 -*-
 import logging
 import re
 import time
@@ -6,16 +6,16 @@ import traceback
 import simplejson
 from django.shortcuts import render
 from django.contrib.auth.decorators import permission_required
-from django.db import connection, OperationalError
+from django.db import connection
 from django.core import serializers
 from django.http import HttpResponse
 from django.db.models import Q
 from sql.engines import get_engine
-from sql.utils.resource_group import user_groups, user_instances
+from sql.utils.resource_group import  user_instances
 from inspur.models import UpdateLog
 import simplejson as json
 from common.utils.extend_json_encoder import ExtendJSONEncoder
-from sql.models import Instance
+from inspur.mysql_exec import mysql_exec
 
 logger = logging.getLogger('default')
 
@@ -30,21 +30,9 @@ def sqlupdate1(request):
         dbfiter = request.POST.get('fiter')
     else:
         dbfiter='liu'
-    print("dbfiter")
-    print(dbfiter)
-    print(type(dbfiter))
     context = {'instances': instances}
-    print(instances)
-    print(type(instances))
-    print("sqlupdate1获取的实例列表：")
-    print(context)
-    instance_list = {}
-    database = []
     database_list = []
     for instance_name in instances:
-            print(instance_name)
-            print('2222')
-            print(type(instance_name))
             query_engine = get_engine(instance=instance_name)
             db_list = query_engine.get_all_databases()
             if dbfiter=='liu':
@@ -62,10 +50,6 @@ def sqlupdate1(request):
                         print(instance_list)
                         database_list.append(instance_list)
                         print(database_list)
-
-    print("获取的database_list如下：")
-    print(database_list)
-    print(type(database_list))
     return render(request, 'sqlupdate1.html', {'database_list': database_list})
 
 def updatelog_save(username, db_name, instance_name, sql_content, cost_time, sql_result):
@@ -92,12 +76,7 @@ def updatelog_save(username, db_name, instance_name, sql_content, cost_time, sql
 def updatelog(request):
     # 获取用户信息
     user = request.user
-
-    # limit = int(request.POST.get('limit'))
-    # offset = int(request.POST.get('offset'))
-    # limit = offset + limit
     search = request.POST.get('search', '')
-
     # 查询个人记录，超管查看所有数据
     if user.is_superuser:
         sql_log_count = UpdateLog.objects.all().filter(
@@ -127,32 +106,15 @@ def dbfiter(request):
     instances = [instance_name for instance_name in user_instances(request.user, 'all')]
 
     context = {'instances': instances}
-
-    # db_name = request.POST.get('db_name')
-    # result = {'status': 0, 'msg': 'ok', 'data': []}
-
-    # try:        # 取出该实例的连接方式，为了后面连进去获取所有databases
-    instance_list = {}
-    database = []
     database_list = []
     while len(database_list) < len(instances):
         for instance_name in instances:
             query_engine = get_engine(instance=instance_name)
             db_list = query_engine.get_all_databases()
-            print("+++++++++++++++++++++++++++++++++++++++++++=")
-            print("dbfiter")
-            print("____________________________")
-            print(dbfiter)
-            print(db_list)
             for db in db_list:
                 if db == dbfiter:
                     instance_list = {'instance': instance_name, 'database': db}
-                    print(instance_list)
                     database_list.append(instance_list)
-                    print(database_list)
-    print("获取的database_list如下：")
-    print(database_list)
-    print(type(database_list))
     return render(request, 'sqlupdate1.html', {'database_list': database_list})
 
 def updatelog_save(username, db_name, instance_name, sql_content, cost_time, sql_result):
@@ -201,49 +163,11 @@ def updatelog(request):
     result = {"total": sql_log_count, "rows": sql_log}
     # 返回查询结果
     return HttpResponse(json.dumps(result), content_type='application/json')
-
-
-@permission_required('sql.menu_sqlupdate', raise_exception=True)
-def dbfiter(request):
-    # dbfiter = request.POST.get('fiter')
-    dbfiter = json.loads(request.POST.get('fiter'))
-    print(dbfiter)
-    # 获取用户关联实例列表
-    instances = [instance_name for instance_name in user_instances(request.user, 'all')]
-    # slave_instance = [instance_name for instance_name in user_instances(request.user, 'slave')]
-
-    context = {'instances': instances}
-
-    instance_list = {}
-    database = []
-    database_list = []
-    while len(database_list) < len(instances):
-        for instance_name in instances:
-            query_engine = get_engine(instance=instance_name)
-            db_list = query_engine.get_all_databases()
-            print("+++++++++++++++++++++++++++++++++++++++++++=")
-            print("dbfiter")
-            print("____________________________")
-            print(dbfiter)
-            print(db_list)
-            for db in db_list:
-                if db == dbfiter:
-                    instance_list = {'instance': instance_name, 'database': db}
-                    print(instance_list)
-                    database_list.append(instance_list)
-                    print(database_list)
-
-    print("获取的database_list如下：")
-    print(database_list)
-    print(type(database_list))
-    return render(request, 'sqlupdate1.html', {'database_list': database_list})
 
 
 @permission_required('sql.menu_sqlupdate', raise_exception=True)
 def update1(request):
     db_list = simplejson.loads(request.POST.get('db_list'))
-    print(db_list)
-    print(type(db_list))
     sql_content = request.POST.get('sql_content')
     result = {'status': 0, 'msg':['ok'] , 'data': {}}
     resulttmp = {'status': 0, 'msg':['ok'] , 'data': {}}
@@ -263,9 +187,6 @@ def update1(request):
             sql_content.splitlines(1))).strip()
     # 去除空行
     sql_content = re.sub('[\r\n\f]{2,}', '\n', sql_content)
-    print("++++++++++++++++++++++++++")
-
-
     sql_list = sql_content.strip().split(';')
     for i in range(sql_list.count('')):
         sql_list.remove('')
@@ -285,12 +206,9 @@ def update1(request):
     #sql_content = sql_content.strip().split(';')[0]
 
     sql_log_bin='set sql_log_bin = 0;'
-    sql_content_new=''
     for sql in sql_list:
          if re.match(r"^delete|^alter", sql.lower()):
              sql_content = sql_log_bin + sql_content
-
-
     try:
         # 查询权限校验
         if re.match(r"^explain", sql_content.lower()):
@@ -304,27 +222,15 @@ def update1(request):
         # 执行更新语句,统计执行时间
 
         sql_result={}
-        print(len(db_list))
         for i in range(len(db_list)):
-            print("sql执行测试---------")
-            #print(db_list[str(i)]["instance"])
             t_start = time.time()
-            instance_name = db_list[str(i)]["instance"]
-            instance = Instance.objects.filter(instance_name=instance_name)
-            print('0')
-            print(instance[0])
-            print(type(instance[0]))
-            print('1')
-            print(instance[0].db_type)
-            query_engine = get_engine(instance=instance[0])
-            sql_result = query_engine.execute(db_name=db_list[str(i)]["db"], sql=sql_content)
+            sql_result = mysql_exec(instance_name=db_list[str(i)]["instance"]).execute(db_list[str(i)]["db"], sql_content)
             t_end = time.time()
             cost_time = "%5s" % "{:.4f}".format(t_end - t_start)
             if  sql_result:
                 resulttmp['msg']= '实例名'+db_list[str(i)]["instance"]+':数据库名'+db_list[str(i)]["db"]+" 错误信息"+str(sql_result)
                 resulttmp['msg']
-                #print(result['msg'])
-                if 'ok' in  result['msg']:
+                if 'ok' in result['msg']:
                     result['msg'][0]=resulttmp['msg']
                 else:
                     result['msg'].append(resulttmp['msg'])
@@ -333,31 +239,11 @@ def update1(request):
                 sql_result=str(sql_result)
             else:
                 sql_result='ok'
-            print(sql_result)
             updatelog_save(user,db_list[str(i)]["db"],db_list[str(i)]["instance"],sql_content,cost_time,sql_result)
-
-            print("看看sql_result是啥？")
-            print(sql_result)
             result['status'] = 1
-
-        #result['msg']=result['msg'].strip('\\')
         for i in range(result['msg'].count(' ')):
             result['msg'].remove('\'')
-        print(result['msg'])
-
-        #sql_result['cost_time'] = cost_time
-        #sql_result['result'] = result['msg']
-
         result['data'] = sql_result
-        print("-----------------------------------------------------")
-        print(result['data'])
-        print(sql_result)
-
-        #return HttpResponse(json.dumps(result), content_type='application/json')
-        #return HttpResponse(sql_result)
-       # sql_result = DaoUpdate(instance_name=instance_name).mysql_execute(str(db_name), sql_content, limit_num)
-
-
     except Exception as e:
         logger.error(traceback.format_exc())
         result['status'] = 1
